@@ -1685,15 +1685,29 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
 }).addTo(map);
 
+// Two layers — we swap which is on the map based on how many pins are
+// currently visible. Clustering helps at 1000+ pins but actively hurts at
+// 100 (collapses what should be a clear geographic spread into 2 blobs).
 const cluster = L.markerClusterGroup({
   showCoverageOnHover: false,
   spiderfyOnMaxZoom: true,
   chunkedLoading: true,
   chunkInterval: 50,
   chunkDelay: 30,
-  maxClusterRadius: 60,
+  maxClusterRadius: 50,
+  disableClusteringAtZoom: 16, // when zoomed in tight, never cluster
 });
+const flat = L.layerGroup();
+const CLUSTER_THRESHOLD = 200;     // below this, show individual pins
+let usingCluster = true;
 map.addLayer(cluster);
+
+function setLayerMode(useCluster) {
+  if (useCluster === usingCluster) return;
+  if (usingCluster) map.removeLayer(cluster); else map.removeLayer(flat);
+  if (useCluster) map.addLayer(cluster); else map.addLayer(flat);
+  usingCluster = useCluster;
+}
 
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -1959,18 +1973,28 @@ function applyFilters() {
   const w = wardCombo.getValue();
   const q = searchInput.value.trim().toLowerCase();
   updateCategoryHighlights(q);
-  cluster.clearLayers();
-  let visible = 0;
+
   const filtered = allMarkers.filter(m => {
     const p = m.placeData;
     if (w && p.ward !== w) return false;
     if (selectedCats.size && !(p.categories || []).some(s => selectedCats.has(s))) return false;
     if (!searchMatch(p, q)) return false;
-    visible++;
     return true;
   });
-  cluster.addLayers(filtered);
-  visibleCount.textContent = visible.toLocaleString() + ' / ' + PLACES.length.toLocaleString() + ' places';
+
+  // Pick clustering vs flat based on count. Below the threshold the user
+  // wants to see every pin laid out on the map — no cluster bubbles.
+  const useCluster = filtered.length > CLUSTER_THRESHOLD;
+  setLayerMode(useCluster);
+  if (useCluster) {
+    cluster.clearLayers();
+    cluster.addLayers(filtered);
+  } else {
+    flat.clearLayers();
+    filtered.forEach(m => flat.addLayer(m));
+  }
+
+  visibleCount.textContent = filtered.length.toLocaleString() + ' / ' + PLACES.length.toLocaleString() + ' places';
 }
 
 searchInput.addEventListener('input', applyFilters);
