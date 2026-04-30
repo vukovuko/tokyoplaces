@@ -1688,10 +1688,29 @@ const GROUP_ORDER = [
 // markers are loaded so the framing adapts to whatever data the dataset
 // actually contains (Tokyo-only vs Japan-wide vs custom subset).
 const map = L.map('map').setView([36.5, 138.0], 5);
+// Standard OpenStreetMap raster tiles. Free, no API key, but place names
+// render in the local language (Japanese for Japan).
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   maxZoom: 19,
 }).addTo(map);
+
+// --- MapTiler alternative (kept for later) ---
+// 100% English labels via `lang=en`, slower than OSM but prettier styles.
+// Key origin-locked to 127.0.0.1 / localhost / tokyo.vukodev.com so it's
+// safe to embed in the public HTML. Uncomment and comment out the OSM
+// block above to switch back.
+//
+// L.tileLayer('https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=crNTedp8Z5na6BD8W7Mt&lang=en', {
+//   attribution: '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+//   maxZoom: 22,
+//   tileSize: 512,
+//   zoomOffset: -1,
+// }).addTo(map);
+//
+// Other MapTiler styles to try by swapping `streets-v4` in the URL above:
+//   streets-v2, streets-v2-light, basic-v2, voyager, positron,
+//   outdoor-v2, topo-v2, bright, dataviz-light
 
 // Two layers — we swap which is on the map based on how many pins are
 // currently visible. Clustering helps at 1000+ pins but actively hurts at
