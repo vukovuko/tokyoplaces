@@ -1515,6 +1515,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
   .cat-chip:hover { background: var(--bg-hover); }
   .cat-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cat-chip.matched { border-color: #fbbf24; box-shadow: 0 0 0 2px rgba(251,191,36,0.25); }
+  .cat-chip.active.matched { box-shadow: 0 0 0 2px rgba(251,191,36,0.45); }
   .cat-chip .cat-count { color: var(--text-tertiary); font-size: 11px; margin-left: 2px; }
   .cat-chip.active .cat-count { color: rgba(255,255,255,0.85); }
   .cat-chip .cat-dot {
@@ -1597,7 +1599,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     </div>
 
     <div class="sb-section sb-search">
-      <input type="text" id="search-input" placeholder="Search places, notes...">
+      <input type="text" id="search-input" placeholder="Search places, notes, or categories...">
     </div>
 
     <div class="sb-section">
@@ -1607,13 +1609,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
                placeholder="All wards (type to search)" autocomplete="off">
         <div id="ward-list" class="combo-list" role="listbox"></div>
       </div>
-    </div>
-
-    <div class="sb-section">
-      <label class="sb-checkbox">
-        <input type="checkbox" id="notes-only">
-        Only places with notes
-      </label>
     </div>
 
     <div class="sb-section">
@@ -1880,27 +1875,43 @@ document.getElementById('clear-cats').addEventListener('click', () => {
 });
 
 // --- Filter pipeline ---
-const notesOnly = document.getElementById('notes-only');
 const searchInput = document.getElementById('search-input');
 const visibleCount = document.getElementById('visible-count');
 
 function searchMatch(p, q) {
   if (!q) return true;
+  // Match across title, note, comment, address, ward, neighborhood
   const hay = [p.title, p.note, p.comment, p.address, p.ward, p.neighborhood]
     .filter(Boolean).join(' ').toLowerCase();
-  return hay.includes(q);
+  if (hay.includes(q)) return true;
+  // Match across this place's categories (slug + display name)
+  for (const slug of (p.categories || [])) {
+    if (slug.includes(q)) return true;
+    const cat = CAT_BY_SLUG[slug];
+    if (cat && cat.name.toLowerCase().includes(q)) return true;
+  }
+  return false;
+}
+
+function updateCategoryHighlights(q) {
+  // Yellow-glow any category chips whose slug or name contains the query.
+  document.querySelectorAll('.cat-chip').forEach(chip => {
+    const slug = chip.dataset.slug;
+    const cat = CAT_BY_SLUG[slug];
+    const matches = q && (slug.includes(q) || (cat && cat.name.toLowerCase().includes(q)));
+    chip.classList.toggle('matched', !!matches);
+  });
 }
 
 function applyFilters() {
   const w = wardCombo.getValue();
-  const n = notesOnly.checked;
   const q = searchInput.value.trim().toLowerCase();
+  updateCategoryHighlights(q);
   cluster.clearLayers();
   let visible = 0;
   const filtered = allMarkers.filter(m => {
     const p = m.placeData;
     if (w && p.ward !== w) return false;
-    if (n && !(p.note || p.comment)) return false;
     if (selectedCats.size && !(p.categories || []).some(s => selectedCats.has(s))) return false;
     if (!searchMatch(p, q)) return false;
     visible++;
@@ -1910,7 +1921,6 @@ function applyFilters() {
   visibleCount.textContent = visible.toLocaleString() + ' / ' + PLACES.length.toLocaleString() + ' places';
 }
 
-notesOnly.addEventListener('change', applyFilters);
 searchInput.addEventListener('input', applyFilters);
 
 applyFilters();
