@@ -1461,6 +1461,40 @@ svg.leaflet-image-layer.leaflet-interactive path {
     background: var(--bg-card); color: var(--text-primary);
     border: 1px solid var(--border); border-radius: 6px;
   }
+
+  /* Combobox — searchable dropdown */
+  .combo { position: relative; }
+  .combo-input {
+    width: 100%; padding: 7px 10px; font-size: 13px;
+    background: var(--bg-card); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .combo-input:focus { outline: none; border-color: var(--accent); }
+  .combo-input::placeholder { color: var(--text-tertiary); }
+  .combo-list {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    z-index: 1200;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+  }
+  .combo-list.open { display: block; }
+  .combo-list::-webkit-scrollbar { width: 6px; }
+  .combo-list::-webkit-scrollbar-thumb { background: #3a3f4a; border-radius: 3px; }
+  .combo-item {
+    padding: 7px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text-primary);
+  }
+  .combo-item.hint { color: var(--text-tertiary); font-style: italic; }
+  .combo-item:hover, .combo-item.active { background: var(--bg-hover); }
+  .combo-item.selected { color: var(--accent); }
+  .combo-empty { padding: 7px 10px; font-size: 12px; color: var(--text-tertiary); }
   .sb-label { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
 
   .sb-cats { padding: 4px 0 12px; }
@@ -1568,7 +1602,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
     <div class="sb-section">
       <div class="sb-label">Ward</div>
-      <select id="ward-filter" class="sb-select"><option value="">All wards</option></select>
+      <div class="combo">
+        <input id="ward-input" class="combo-input" type="text"
+               placeholder="All wards (type to search)" autocomplete="off">
+        <div id="ward-list" class="combo-list" role="listbox"></div>
+      </div>
     </div>
 
     <div class="sb-section">
@@ -1687,12 +1725,103 @@ const allMarkers = PLACES
     return m;
   });
 
-// --- Sidebar: Ward dropdown ---
+// --- Sidebar: Ward combobox (searchable + selectable) ---
 const wards = [...new Set(allMarkers.map(m => m.placeData.ward).filter(w => w && w !== 'unknown'))].sort();
-const wardSel = document.getElementById('ward-filter');
-wards.forEach(w => {
-  const o = document.createElement('option'); o.value = w; o.textContent = w;
-  wardSel.appendChild(o);
+
+/**
+ * Build a searchable combobox.
+ * options: list of strings, sorted as you want them displayed.
+ * onChange: called with the selected value (or '' for cleared).
+ * Returns { getValue, setValue }.
+ */
+function makeCombo({ input, list, options, onChange }) {
+  let selected = '';
+  let activeIdx = -1;
+  let visible = [];
+
+  function render(filter) {
+    const f = (filter || '').toLowerCase().trim();
+    visible = f ? options.filter(o => o.toLowerCase().includes(f)) : options.slice();
+    list.innerHTML = '';
+    // Clear / "All" option always at top
+    if (selected || f) {
+      const clear = document.createElement('div');
+      clear.className = 'combo-item hint';
+      clear.textContent = '— All —';
+      clear.dataset.value = '';
+      list.appendChild(clear);
+    }
+    if (!visible.length) {
+      const empty = document.createElement('div');
+      empty.className = 'combo-empty';
+      empty.textContent = 'No matches';
+      list.appendChild(empty);
+      return;
+    }
+    visible.forEach(o => {
+      const el = document.createElement('div');
+      el.className = 'combo-item' + (o === selected ? ' selected' : '');
+      el.textContent = o;
+      el.dataset.value = o;
+      list.appendChild(el);
+    });
+    activeIdx = -1;
+  }
+
+  function open() { list.classList.add('open'); render(input.value); }
+  function close() { list.classList.remove('open'); input.value = selected; activeIdx = -1; }
+
+  function pick(val) {
+    selected = val;
+    input.value = val;
+    list.classList.remove('open');
+    onChange(val);
+  }
+
+  function setActive(idx) {
+    const items = list.querySelectorAll('.combo-item');
+    items.forEach(el => el.classList.remove('active'));
+    if (idx >= 0 && idx < items.length) {
+      items[idx].classList.add('active');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    }
+    activeIdx = idx;
+  }
+
+  input.addEventListener('focus', open);
+  input.addEventListener('input', () => { list.classList.add('open'); render(input.value); });
+  // delay close so a click on a list item is registered before blur fires
+  input.addEventListener('blur', () => setTimeout(close, 150));
+  input.addEventListener('keydown', (e) => {
+    const items = list.querySelectorAll('.combo-item');
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIdx + 1, items.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(activeIdx - 1, 0)); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0 && items[activeIdx]) pick(items[activeIdx].dataset.value);
+    }
+    else if (e.key === 'Escape') { input.blur(); }
+  });
+
+  list.addEventListener('mousedown', (e) => {
+    // mousedown so we beat the input.blur handler
+    const item = e.target.closest('.combo-item');
+    if (!item) return;
+    e.preventDefault();
+    pick(item.dataset.value);
+  });
+
+  return {
+    getValue: () => selected,
+    setValue: pick,
+  };
+}
+
+const wardCombo = makeCombo({
+  input: document.getElementById('ward-input'),
+  list: document.getElementById('ward-list'),
+  options: wards,
+  onChange: () => applyFilters(),
 });
 
 // --- Sidebar: Categories panel ---
@@ -1763,7 +1892,7 @@ function searchMatch(p, q) {
 }
 
 function applyFilters() {
-  const w = wardSel.value;
+  const w = wardCombo.getValue();
   const n = notesOnly.checked;
   const q = searchInput.value.trim().toLowerCase();
   cluster.clearLayers();
@@ -1781,7 +1910,6 @@ function applyFilters() {
   visibleCount.textContent = visible.toLocaleString() + ' / ' + PLACES.length.toLocaleString() + ' places';
 }
 
-wardSel.addEventListener('change', applyFilters);
 notesOnly.addEventListener('change', applyFilters);
 searchInput.addEventListener('input', applyFilters);
 
