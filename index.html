@@ -1513,9 +1513,48 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .popup-link a:hover { text-decoration: underline; }
 
   #loc-status { font-size: 11px; color: var(--text-tertiary); margin-top: 6px; }
+
+  /* Mobile-only floating menu button + backdrop */
+  #mobile-toggle {
+    display: none;
+    position: fixed; left: 16px; bottom: 16px; z-index: 1100;
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--bg-sidebar); color: var(--text-primary);
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    font-size: 22px; cursor: pointer;
+    align-items: center; justify-content: center;
+  }
+  #sidebar-backdrop {
+    display: none;
+    position: fixed; inset: 0; z-index: 1050;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  #sidebar-backdrop.show { opacity: 1; }
+
+  @media (max-width: 767px) {
+    #app { position: relative; }
+    #sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0;
+      width: 86vw; max-width: 360px;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      z-index: 1100;
+      box-shadow: 2px 0 16px rgba(0,0,0,0.3);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #map { width: 100%; }
+    #mobile-toggle { display: flex; }
+    #sidebar-backdrop.show { display: block; }
+    /* Make the floating "Center on me" Leaflet controls not collide with our toggle */
+    .leaflet-bottom.leaflet-left { display: none; }
+  }
 </style>
 </head>
 <body>
+<button id="mobile-toggle" aria-label="Open menu">☰</button>
+<div id="sidebar-backdrop"></div>
 <div id="app">
   <div id="sidebar">
     <div class="sb-header">
@@ -1809,79 +1848,18 @@ map.on('locationerror', (e) => {
   }
 });
 
-// ----- Geolocation (Google-Maps-style blue dot + accuracy circle) -----
-// NOTE: browsers refuse geolocation on file:// URLs. To make this work,
-// serve the project over http with `uv run python -m http.server 8000`
-// then open http://localhost:8000/final/tokyo_map.html
-let userMarker = null;
-let userCircle = null;
-let watching = false;
-let firstFix = true;
-
-const locBtn = document.getElementById('toggle-location');
-const centerBtn = document.getElementById('center-on-me');
-const locStatus = document.getElementById('loc-status');
-
-if (!('geolocation' in navigator)) {
-  locBtn.disabled = true;
-  locStatus.textContent = 'Geolocation not supported in this browser.';
-}
-
-locBtn.addEventListener('click', () => {
-  if (!watching) {
-    locStatus.textContent = 'Requesting location...';
-    map.locate({ watch: true, enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
-    watching = true;
-    firstFix = true;
-    locBtn.textContent = '📍 Stop tracking';
-  } else {
-    map.stopLocate();
-    watching = false;
-    if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
-    if (userCircle) { map.removeLayer(userCircle); userCircle = null; }
-    locBtn.textContent = '📍 Show my location';
-    centerBtn.style.display = 'none';
-    locStatus.textContent = '';
-  }
-});
-
-centerBtn.addEventListener('click', () => {
-  if (userMarker) map.setView(userMarker.getLatLng(), Math.max(map.getZoom(), 15));
-});
-
-map.on('locationfound', (e) => {
-  if (!userMarker) {
-    userMarker = L.circleMarker(e.latlng, {
-      radius: 8, color: '#fff', weight: 2,
-      fillColor: '#1a73e8', fillOpacity: 1,
-    }).addTo(map);
-    userCircle = L.circle(e.latlng, {
-      radius: e.accuracy, color: '#1a73e8',
-      fillColor: '#1a73e8', fillOpacity: 0.12, weight: 1,
-    }).addTo(map);
-  } else {
-    userMarker.setLatLng(e.latlng);
-    userCircle.setLatLng(e.latlng).setRadius(e.accuracy);
-  }
-  centerBtn.style.display = 'block';
-  locStatus.textContent = `Live · accuracy ±${Math.round(e.accuracy)}m`;
-  if (firstFix) {
-    map.setView(e.latlng, Math.max(map.getZoom(), 14));
-    firstFix = false;
-  }
-});
-
-map.on('locationerror', (e) => {
-  watching = false;
-  locBtn.textContent = '📍 Show my location';
-  if (e.code === 1) {
-    locStatus.textContent = 'Permission denied.';
-  } else if (location.protocol === 'file:') {
-    locStatus.textContent = 'Browser blocks geolocation on file://. Run `uv run python -m http.server 8000` and open via http://localhost:8000/...';
-  } else {
-    locStatus.textContent = 'Location error: ' + e.message;
-  }
-});
+// --- Mobile sidebar toggle ---
+const sidebar = document.getElementById('sidebar');
+const mobileToggle = document.getElementById('mobile-toggle');
+const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+function openSidebar() { sidebar.classList.add('open'); sidebarBackdrop.classList.add('show'); }
+function closeSidebar() { sidebar.classList.remove('open'); sidebarBackdrop.classList.remove('show'); }
+mobileToggle.addEventListener('click', openSidebar);
+sidebarBackdrop.addEventListener('click', closeSidebar);
+// Auto-close on filter actions when on mobile
+document.querySelectorAll('.cat-chip').forEach(c => c.addEventListener('click', () => {
+  if (window.innerWidth < 768) setTimeout(closeSidebar, 200);
+}));
 </script>
 </body>
 </html>
