@@ -1617,6 +1617,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
     #sidebar-backdrop.show { display: block; }
     /* Make the floating "Center on me" Leaflet controls not collide with our toggle */
     .leaflet-bottom.leaflet-left { display: none; }
+    /* iOS Safari zooms the page when an <input> with font-size < 16px is
+       focused. Bumping the search + combobox inputs to 16px on mobile
+       prevents that — the user can still pinch-zoom the map without the
+       page reflowing under them. */
+    .sb-search input,
+    .combo-input { font-size: 16px; }
   }
 </style>
 </head>
@@ -2167,10 +2173,6 @@ function openSidebar() { sidebar.classList.add('open'); sidebarBackdrop.classLis
 function closeSidebar() { sidebar.classList.remove('open'); sidebarBackdrop.classList.remove('show'); }
 mobileToggle.addEventListener('click', openSidebar);
 sidebarBackdrop.addEventListener('click', closeSidebar);
-// Auto-close on filter actions when on mobile
-document.querySelectorAll('.cat-chip').forEach(c => c.addEventListener('click', () => {
-  if (window.innerWidth < 768) setTimeout(closeSidebar, 200);
-}));
 </script>
 </body>
 </html>
