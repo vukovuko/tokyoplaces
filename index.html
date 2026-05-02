@@ -2061,7 +2061,7 @@ document.getElementById('detail-close').addEventListener('click', closeDetailSid
 // (e.g. `=w203-h152-k-no`). Swap that for `=s1200` to fetch a much larger
 // version of the same image without re-derivation.
 function upsizeImageUrl(u) {
-  return String(u || '').replace(/=[wsh][\d-]+(?:-[a-z-]+)*$/, '=s1200');
+  return String(u || '').replace(/=[a-z0-9]+(?:-[a-z0-9]+)*$/i, '=s1200');
 }
 
 // Lightbox state: the active gallery (an array of URLs from one place) and
@@ -2407,6 +2407,60 @@ function renderSelectedChips() {
 const searchInput = document.getElementById('search-input');
 const visibleCount = document.getElementById('visible-count');
 
+// Curated review-keyword vocabulary. Each entry: [label, regex against
+// concatenated review text]. Used now ONLY to make these terms searchable
+// (typing "matcha" / "must visit" / "english menu" surfaces places whose
+// reviews mention the concept). Future: turn this into a sidebar chip
+// panel like Categories — search for "REVIEW_KEYWORDS" in this file.
+const REVIEW_KEYWORDS = [
+  // Practical
+  ['English menu',     /english\s+menu/i],
+  ['English speaking', /english[-\s]?speaking|speak\s+english/i],
+  ['Reservation',      /reservation|book(?:ing|ed)|in\s+advance/i],
+  ['Long queue',       /queue|long\s+(?:line|wait)|hour[-\s]?long/i],
+  ['No queue',         /no\s+(?:line|queue|wait)|walk[-\s]?in/i],
+  ['Breakfast',        /breakfast|morning\s+menu/i],
+  ['Open late',        /open\s+late|late[-\s]?night|midnight|24\s*hour/i],
+  ['Cash only',        /cash\s*only/i],
+  ['Wi-Fi',            /wi[-\s]?fi/i],
+  // Vibe
+  ['Cozy',             /cozy|cosy|intimate/i],
+  ['Quiet',            /quiet|peaceful|calm\s+atmosphere/i],
+  ['Crowded',          /crowded|packed|busy/i],
+  ['Romantic',         /romantic|date\s+night/i],
+  ['Family-friendly',  /family[-\s]?friendly|kid[-\s]?friendly|with\s+kids?/i],
+  ['View',             /(?:great|amazing|stunning|nice)\s+view|view\s+of/i],
+  ['Outdoor seating',  /outdoor\s+seat|terrace|patio/i],
+  ['Counter seat',     /counter\s+seat|sit\s+at\s+the\s+counter|chef.s\s+counter/i],
+  // Quality signal
+  ['Must visit',       /must[-\s]?(?:visit|try|go|eat)|highly\s+recommend/i],
+  ['Hidden gem',       /hidden\s+gem|off\s+the\s+beaten/i],
+  ['Worth the wait',   /worth\s+the\s+(?:wait|line|queue|trip)/i],
+  ['Overrated',        /overrated|over[-\s]?hyped|disappointed|disappointing|underwhelm/i],
+  ['Touristy',         /touristy|tourist\s+trap/i],
+  ['Friendly staff',   /friendly\s+(?:staff|service)|kind\s+staff|welcoming/i],
+  ['Authentic',        /authentic|traditional|local\s+favorite/i],
+  // Food-specific
+  ['Matcha',           /matcha/i],
+  ['Specialty coffee', /specialty\s+coffee|third[-\s]?wave|pour[-\s]?over/i],
+  ['Oat milk',         /oat\s+milk|plant[-\s]?based\s+milk/i],
+  ['Omakase',          /omakase/i],
+  ['Tonkotsu',         /tonkotsu/i],
+  ['Miso ramen',       /miso\s+ramen/i],
+  ['Michelin',         /michelin/i],
+];
+
+// Returns true if the user's query matches any REVIEW_KEYWORDS label
+// AND that keyword's regex hits the place's reviews. Avoids letting the
+// search box descend into free-text review-text matching (which finds
+// god knows what and is hard to control).
+function reviewKeywordMatch(p, q) {
+  const matched = REVIEW_KEYWORDS.filter(([label]) => label.toLowerCase().includes(q));
+  if (!matched.length) return false;
+  const blob = (p.reviews || []).map(r => r.text || '').join(' ');
+  return matched.some(([_, rx]) => rx.test(blob));
+}
+
 function searchMatch(p, q) {
   if (!q) return true;
   // Match across title, note, comment, address, prefecture, city, ward, neighborhood
@@ -2420,6 +2474,8 @@ function searchMatch(p, q) {
     const cat = CAT_BY_SLUG[slug];
     if (cat && cat.name.toLowerCase().includes(q)) return true;
   }
+  // Match controlled review-keyword vocabulary (see REVIEW_KEYWORDS above)
+  if (reviewKeywordMatch(p, q)) return true;
   return false;
 }
 
