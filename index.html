@@ -1442,6 +1442,22 @@ svg.leaflet-image-layer.leaflet-interactive path {
   #map { flex: 1; }
   .leaflet-container { background: #2a2f38; }
 
+  /* Permanent category labels above markers (only shown at high zoom — see updateLabels).
+     The Leaflet tooltip wrapper is left transparent; the inner <span> carries
+     the per-category background + text color set inline by updateLabels(). */
+  .marker-label {
+    background: transparent; border: none; padding: 0;
+    box-shadow: none; pointer-events: none;
+  }
+  .marker-label::before { display: none; }   /* hide Leaflet's default tip arrow */
+  .marker-label > span {
+    display: inline-block;
+    font-size: 10px; font-weight: 600;
+    padding: 1px 6px; border-radius: 3px;
+    white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+
   .sb-header { padding: 16px 10px; border-bottom: 1px solid var(--border); }
   .sb-title { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
   .sb-count { font-size: 12px; color: var(--text-secondary); }
@@ -2318,6 +2334,54 @@ allMarkers.forEach(m => {
   if (u) MARKERS_BY_URL[u] = m;
 });
 
+// Pick a short label for a marker tooltip — first known category's display
+// name + that category's color. Returns null when no recognized category.
+function placeLabel(p) {
+  for (const s of (p.categories || [])) {
+    const c = CAT_BY_SLUG[s];
+    if (c) return { name: c.name, color: c.color };
+  }
+  return null;
+}
+
+// Pick black or white text based on how light the background is. Uses the
+// standard YIQ perceived-brightness formula (heavier weight on green which
+// dominates human luminance perception).
+function pickTextColor(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length !== 6) return '#fff';
+  const r = parseInt(h.substr(0, 2), 16);
+  const g = parseInt(h.substr(2, 2), 16);
+  const b = parseInt(h.substr(4, 2), 16);
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 150 ? '#000' : '#fff';
+}
+
+// Show/hide permanent category labels based on zoom. Tooltips are bound on
+// demand (not upfront) so the DOM stays clean at low zoom — at country/city
+// scale we don't pay for thousands of hidden tooltip elements.
+const LABEL_ZOOM = 16;   // OSM max is 19; show one step earlier than block scale
+let labelsBound = false;
+function updateLabels() {
+  const want = map.getZoom() >= LABEL_ZOOM;
+  if (want === labelsBound) return;
+  if (want) {
+    allMarkers.forEach(m => {
+      const lbl = placeLabel(m.placeData);
+      if (lbl && !m.getTooltip()) {
+        const text = pickTextColor(lbl.color);
+        m.bindTooltip(
+          `<span style="background:${lbl.color};color:${text}">${escapeHtml(lbl.name)}</span>`,
+          { permanent: true, direction: 'top', className: 'marker-label', offset: [0, -8] }
+        );
+      }
+    });
+  } else {
+    allMarkers.forEach(m => m.unbindTooltip());
+  }
+  labelsBound = want;
+}
+
 let activeMarker = null;
 function setActiveMarker(p) {
   // Restore previous marker's default style
@@ -2681,6 +2745,10 @@ if (allMarkers.length && !location.hash.startsWith('#p=')) {
 
 // If the user landed on a #p=<id> URL, open that place's sidebar + pan to it.
 loadFromHash();
+
+// Show category text above markers when zoomed in close.
+map.on('zoomend', updateLabels);
+updateLabels();
 
 // --- Geolocation (Google-Maps-style blue dot + accuracy circle) ---
 let userMarker = null, userCircle = null, watching = false, firstFix = true;
