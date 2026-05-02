@@ -5,11 +5,6 @@
 <title>Tokyo Places Map</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- PWA: installable to home screen, works offline once visited.
-     The map data is fully inlined in this HTML so the only network
-     dependency offline is map tiles, which the SW caches as you browse.
-     Icon set follows the realfavicongenerator naming convention — drop
-     replacement files into dist/ and they'll be picked up. -->
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a1d24">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -2584,13 +2579,9 @@ function closeSidebar() { sidebar.classList.remove('open'); sidebarBackdrop.clas
 mobileToggle.addEventListener('click', openSidebar);
 sidebarBackdrop.addEventListener('click', closeSidebar);
 
-// --- Service worker registration (PWA + offline tile caching) ---
+// Unregister any previously installed service worker (we removed SW support)
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err => {
-      console.warn('Service worker registration failed:', err);
-    });
-  });
+  navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
 }
 </script>
 </body>
