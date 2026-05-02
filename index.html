@@ -1643,6 +1643,19 @@ svg.leaflet-image-layer.leaflet-interactive path {
     padding: 0 4px; flex-shrink: 0;
   }
   .dt-close:hover { color: var(--text-primary); }
+  .dt-share {
+    background: none; border: 1px solid var(--border); color: var(--text-secondary);
+    cursor: pointer; flex-shrink: 0;
+    padding: 6px; border-radius: 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .dt-share:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+  .dt-share.copied { color: var(--accent); border-color: var(--accent); }
+  .dt-share svg { display: block; }
+  .dt-share .dt-share-check { display: none; }
+  .dt-share.copied .dt-share-copy { display: none; }
+  .dt-share.copied .dt-share-check { display: block; }
 
   /* Body sections — no internal borders, just vertical rhythm via padding.
      The single divider in the panel is the header's border-bottom above. */
@@ -1802,6 +1815,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <div class="sb-section">
       <button id="toggle-location" class="sb-btn">📍 Show my location</button>
       <button id="center-on-me" class="sb-btn" style="display:none">Center on me</button>
+      <button id="surprise-me" class="sb-btn">🎲 Surprise me</button>
       <div id="loc-status"></div>
     </div>
 
@@ -1833,6 +1847,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <div class="dt-title" id="detail-title"></div>
       <div class="dt-cats" id="detail-cats"></div>
     </div>
+    <button class="dt-share" id="detail-share" aria-label="Copy share link" title="Copy link to this place">
+      <svg class="dt-share-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="4" y="8" width="12" height="12" rx="1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M8 6V5C8 4.44772 8.44772 4 9 4H19C19.5523 4 20 4.44772 20 5V15C20 15.5523 19.5523 16 19 16H18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 2"/>
+      </svg>
+      <svg class="dt-share-check" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M5 12.5L10 17.5L20 7.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
     <button class="dt-close" id="detail-close" aria-label="Close detail panel">×</button>
   </div>
   <div id="detail-body"></div>
@@ -1898,11 +1921,11 @@ const cluster = L.markerClusterGroup({
   chunkedLoading: true,
   chunkInterval: 50,
   chunkDelay: 30,
-  maxClusterRadius: 50,
-  disableClusteringAtZoom: 16, // when zoomed in tight, never cluster
+  maxClusterRadius: 35,        // smaller radius → only truly overlapping pins merge; suppresses 2/3-pin micro-clusters
+  disableClusteringAtZoom: 14, // at zoom 14+ (≈ ward scale), show individual pins
 });
 const flat = L.layerGroup();
-const CLUSTER_THRESHOLD = 200;     // below this, show individual pins
+const CLUSTER_THRESHOLD = 500;     // below this, show individual pins
 let usingCluster = true;
 map.addLayer(cluster);
 
@@ -1956,9 +1979,11 @@ function renderStars(rating) {
 //     comment  (if any)
 //     reviews (cards)
 //     "Open in Google Maps" link
-function openDetailSidebar(p) {
+function openDetailSidebar(p, fromHash) {
   const wrap = document.getElementById('detail-sidebar');
   const body = document.getElementById('detail-body');
+  if (!fromHash) setHashForPlace(p);
+  setActiveMarker(p);
 
   // ---- HEADER: title + categories ----
   document.getElementById('detail-title').textContent = p.title || '(unnamed)';
@@ -2049,13 +2074,72 @@ function openDetailSidebar(p) {
   wrap.setAttribute('aria-hidden', 'false');
 }
 
-function closeDetailSidebar() {
+function closeDetailSidebar(fromHash) {
   const wrap = document.getElementById('detail-sidebar');
   wrap.classList.remove('open');
   wrap.setAttribute('aria-hidden', 'true');
+  if (!fromHash) setHashForPlace(null);
+  setActiveMarker(null);
 }
 
-document.getElementById('detail-close').addEventListener('click', closeDetailSidebar);
+document.getElementById('detail-close').addEventListener('click', () => closeDetailSidebar());
+
+// --- Share-link via URL hash (#p=<FTID>) ---
+// FTID = the `!1s0xHEX:0xHEX` segment Google embeds in every place URL.
+// Permanent unique ID, survives URL format changes and re-exports.
+function placeId(p) {
+  const u = (p && p.google_maps_url) || '';
+  const m = u.match(/!1s([^!?&]+)/);
+  if (m) return m[1];
+  // Fallback for the rare URL without an FTID
+  return u ? 'b64-' + btoa(u).replace(/=+$/, '') : '';
+}
+
+const PLACES_BY_ID = {};
+PLACES.forEach(p => { const id = placeId(p); if (id) PLACES_BY_ID[id] = p; });
+
+function setHashForPlace(p) {
+  const newHash = p ? '#p=' + placeId(p) : '';
+  if (location.hash === newHash) return;
+  // replaceState avoids triggering hashchange (no feedback loop)
+  history.replaceState({}, '', newHash || location.pathname + location.search);
+}
+
+function loadFromHash() {
+  const m = location.hash.match(/^#p=([^&]+)$/);
+  if (!m) {
+    if (document.getElementById('detail-sidebar').classList.contains('open')) {
+      closeDetailSidebar(true);
+    }
+    return;
+  }
+  const id = decodeURIComponent(m[1]);
+  const p = PLACES_BY_ID[id];
+  if (!p) return;  // unknown ID, ignore
+  if (Number.isFinite(p.latitude) && Number.isFinite(p.longitude)) {
+    map.setView([p.latitude, p.longitude], Math.max(map.getZoom(), 16));
+  }
+  openDetailSidebar(p, true);
+}
+
+window.addEventListener('hashchange', loadFromHash);
+
+// Copy share link to clipboard with visual feedback (icon swaps to checkmark)
+async function copyShareLink() {
+  const btn = document.getElementById('detail-share');
+  try {
+    await navigator.clipboard.writeText(location.href);
+    btn.classList.add('copied');
+    btn.title = 'Copied!';
+  } catch (e) {
+    btn.title = 'Copy failed — use the address bar';
+  }
+  setTimeout(() => {
+    btn.classList.remove('copied');
+    btn.title = 'Copy link to this place';
+  }, 1500);
+}
+document.getElementById('detail-share').addEventListener('click', copyShareLink);
 
 // --- Image lightbox modal ---
 // Google CDN URLs encode the requested size in the trailing `=...` segment
@@ -2224,6 +2308,33 @@ const allMarkers = PLACES
     m.placeData = p;
     return m;
   });
+
+// URL → marker lookup so we can re-style the active one when its detail
+// sidebar opens. Empty-URL places are skipped (rare; they wouldn't have
+// a stable identity to match anyway).
+const MARKERS_BY_URL = {};
+allMarkers.forEach(m => {
+  const u = m.placeData.google_maps_url;
+  if (u) MARKERS_BY_URL[u] = m;
+});
+
+let activeMarker = null;
+function setActiveMarker(p) {
+  // Restore previous marker's default style
+  if (activeMarker) {
+    activeMarker.setStyle({ radius: 8, color: 'rgba(0,0,0,0.7)', weight: 2 });
+    activeMarker = null;
+  }
+  if (!p) return;
+  const m = MARKERS_BY_URL[p.google_maps_url];
+  if (!m) return;
+  // Active style: bigger, white ring, on top of neighbors. Keep fillColor
+  // (category color) so the visual cue is "this one stands out" not
+  // "this one changed identity".
+  m.setStyle({ radius: 12, color: '#ffffff', weight: 3 });
+  if (typeof m.bringToFront === 'function') m.bringToFront();
+  activeMarker = m;
+}
 
 // --- Sidebar: Ward combobox (searchable + selectable) ---
 const wards = [...new Set(allMarkers.map(m => m.placeData.ward).filter(w => w && w !== 'unknown'))].sort();
@@ -2561,11 +2672,15 @@ applyFilters();
 
 // Frame the initial view on whatever data is loaded — Tokyo-only, Japan-wide,
 // or any subset. Falls back to the static setView() above if the dataset
-// is empty (no markers to bound).
-if (allMarkers.length) {
+// is empty (no markers to bound). Skip this if the URL hash points to a
+// specific place — loadFromHash will set its own view.
+if (allMarkers.length && !location.hash.startsWith('#p=')) {
   const bounds = L.featureGroup(allMarkers).getBounds();
   map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
 }
+
+// If the user landed on a #p=<id> URL, open that place's sidebar + pan to it.
+loadFromHash();
 
 // --- Geolocation (Google-Maps-style blue dot + accuracy circle) ---
 let userMarker = null, userCircle = null, watching = false, firstFix = true;
@@ -2626,6 +2741,59 @@ map.on('locationerror', (e) => {
   } else {
     locStatus.textContent = 'Location error: ' + e.message;
   }
+});
+
+// --- Surprise me: random place from current filters ---
+// Haversine distance in km — used to bias selection toward nearby places
+// when geolocation is active.
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+document.getElementById('surprise-me').addEventListener('click', () => {
+  // Reuse the exact same filter logic as applyFilters so we respect the
+  // user's current ward/category/search.
+  const w = wardCombo.getValue();
+  const q = searchInput.value.trim().toLowerCase();
+  let pool = allMarkers.filter(m => {
+    const p = m.placeData;
+    if (w && p.ward !== w) return false;
+    if (selectedCats.size && !(p.categories || []).some(s => selectedCats.has(s))) return false;
+    if (!searchMatch(p, q)) return false;
+    return true;
+  }).map(m => m.placeData);
+
+  if (!pool.length) {
+    locStatus.textContent = 'No places match current filters.';
+    setTimeout(() => { if (!watching) locStatus.textContent = ''; }, 2000);
+    return;
+  }
+
+  // If we know the user's location, prefer something within 5 km. Falls
+  // back to the full pool if nothing nearby.
+  if (userMarker) {
+    const u = userMarker.getLatLng();
+    const nearby = pool.filter(p =>
+      Number.isFinite(p.latitude) && Number.isFinite(p.longitude) &&
+      distanceKm(u.lat, u.lng, p.latitude, p.longitude) <= 5
+    );
+    if (nearby.length) pool = nearby;
+  }
+
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  if (Number.isFinite(pick.latitude) && Number.isFinite(pick.longitude)) {
+    map.setView([pick.latitude, pick.longitude], 16);
+  }
+  openDetailSidebar(pick);
+  // On mobile, close the sidebar so the user sees the map + detail panel
+  closeSidebar();
 });
 
 // --- Mobile sidebar toggle ---
