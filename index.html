@@ -1667,9 +1667,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .dt-images { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .dt-image {
     display: block; width: 100%; aspect-ratio: 4/3;
-    background-size: cover; background-position: center;
+    object-fit: cover;
     border-radius: 6px; cursor: pointer;
     transition: opacity 0.15s;
+    background: var(--bg-card);
   }
   .dt-image:hover { opacity: 0.85; }
 
@@ -1979,7 +1980,7 @@ function openDetailSidebar(p) {
   const imgs = p.image_urls || [];
   if (imgs.length) {
     const tiles = imgs.map(u =>
-      `<div class="dt-image" data-img="${escapeHtml(u)}" style="background-image: url('${escapeHtml(u)}')"></div>`
+      `<img class="dt-image" loading="lazy" decoding="async" data-img="${escapeHtml(u)}" src="${escapeHtml(u)}" alt="">`
     ).join('');
     sections.push(`<div class="dt-section"><div class="dt-images">${tiles}</div></div>`);
   }
