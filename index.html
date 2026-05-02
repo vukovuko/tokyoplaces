@@ -7,6 +7,7 @@
 
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a1d24">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Japan Map">
@@ -2578,11 +2579,6 @@ function openSidebar() { sidebar.classList.add('open'); sidebarBackdrop.classLis
 function closeSidebar() { sidebar.classList.remove('open'); sidebarBackdrop.classList.remove('show'); }
 mobileToggle.addEventListener('click', openSidebar);
 sidebarBackdrop.addEventListener('click', closeSidebar);
-
-// Unregister any previously installed service worker (we removed SW support)
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
-}
 </script>
 </body>
 </html>
